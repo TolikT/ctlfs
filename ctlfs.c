@@ -15,8 +15,8 @@
 int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, struct fuse_file_info *ffi){
 	FILE *readcmd;
 	char *line = NULL;
-	char *cmd = NULL;
-	char *path2;
+	char cmd[2048];
+	char path2[2048];
 	size_t len = 0;
 	int flag = 0;
 	ssize_t read;
@@ -28,42 +28,97 @@ int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, st
 		}
 		return (0);
 	}
-	if (strcmp(path, "/kern") == 0){
-		for (int i = 0; i < KERN_ELEMS_COUNT; i++)
-			filler(data, kern[i], NULL, 0);
-		return (0);
+	else {
+		if(path[0] == '/') path++;
+		strcpy(path2, path);
+		//filler(data, path2, NULL, 0);
+		for (int i = 0; path2[i] != 0 ; i++) {
+			if(path2[i] == '/') path2[i] = '.'; 
+		}
+		//filler(data, path2, NULL, 0);
+		sprintf(cmd, "sysctl -N %s", path2);
+		readcmd = popen(cmd, "r");
+		//filler(data, cmd, NULL, 0);
+		//return 0;
+		if (readcmd != NULL) {
+			while ((read = getline(&line, &len, readcmd)) != -1) {
+				line[read - 1] = 0;
+				filler(data, line, NULL, 0);
+				//flag = flag > 0 ? flag : flag + 1;
+			}
+			//if ( !flag ) {
+			//	return (-ENOENT);
+			//}
+		fclose(readcmd);
+		free(path2);
+		return(0);
+		}
+		/*else {
+			return (-ENOENT);
+		}*/
 	}
-	if (strcmp(path, "/security") == 0){
-		for(int i = 0; i < SECURITY_ELEMS_COUNT; i++)
-			filler(data, secur[i], NULL, 0);
-		return (0);
-	}
-	if (strcmp(path, "/security/bsd") == 0){
-		for(int i = 0; i < SECURBSD_ELEMS_COUNT; i++)
-			filler(data, securbsd[i], NULL, 0);
-		return (0);
-	}
-	if (strcmp(path, "/vm") == 0){
-		for (int i = 0; i < VM_ELEMS_COUNT; i++)
-			filler(data, vm[i], NULL, 0);
-		return (0);
-	}
-	if (strcmp(path, "/hw") == 0){
-		for (int i = 0; i < HW_ELEMS_COUNT; i++)
-			filler(data, hw[i], NULL, 0);
-		return (0);
-	}
-	if (strcmp(path, "/machdep") == 0){
-		for (int i = 0; i < MACHDEP_ELEMS_COUNT; i++)
-			filler(data, machdep[i], NULL, 0);
-		return (0);
-	}
-	if (strcmp(path, "/user") == 0){
-		for (int i = 0; i < USER_ELEMS_COUNT; i++)
-			filler(data, user[i], NULL, 0);
-		return (0);
-	}
-	return (-ENOENT);
+	
+	//else {
+	//	strcpy(path2, path == '/' ? (path + 1) : path);
+	//	for (int i = 0; path2[i] != 0 ; i++) {
+	//		if(path2[i] == '/') path2[i] = '.'; 
+	//	}
+	//	sprintf(cmd, "sysctl -N %s | sed 's/%s\\.\\{0,1\\}\\([^.]*\\)\\.\\{0,1\\}.*/\\1/g' | uniq", path2, path2); 
+	//	readcmd = popen(cmd, "r");	
+	//	if (readcmd != NULL) {
+	//		while ((read = getline(&line, &len, readcmd)) != -1) {
+	//			line[read - 1] = 0;
+	//			filler(data, line, NULL, 0);
+	//			flag = flag > 0 ? flag : flag + 1;
+	//		}
+	//		if ( !flag ) {
+	//			return (-ENOENT);
+	//		}
+	//	}
+	//	else {
+	//		return (-ENOENT);
+	//	}	
+	////	for (int i = 0; i < ROOT_ELEMS_COUNT; i++)
+	////		filler(data, root[i], NULL, 0);
+	//	return (0);
+
+	//}
+	//if (strcmp(path, "/kern") == 0){
+	//	for (int i = 0; i < KERN_ELEMS_COUNT; i++)
+	//		filler(data, kern[i], NULL, 0);
+	//	return (0);
+	//}
+	//if (strcmp(path, "/security") == 0){
+	//	for(int i = 0; i < SECURITY_ELEMS_COUNT; i++)
+	//		filler(data, secur[i], NULL, 0);
+	//	return (0);
+	//}
+	//if (strcmp(path, "/security/bsd") == 0){
+	//	for(int i = 0; i < SECURBSD_ELEMS_COUNT; i++)
+	//		filler(data, securbsd[i], NULL, 0);
+	//	return (0);
+	//}
+	//if (strcmp(path, "/vm") == 0){
+	//	for (int i = 0; i < VM_ELEMS_COUNT; i++)
+	//		filler(data, vm[i], NULL, 0);
+	//	return (0);
+	//}
+	//if (strcmp(path, "/hw") == 0){
+	//	for (int i = 0; i < HW_ELEMS_COUNT; i++)
+	//		filler(data, hw[i], NULL, 0);
+	//	return (0);
+	//}
+	//if (strcmp(path, "/machdep") == 0){
+	//	for (int i = 0; i < MACHDEP_ELEMS_COUNT; i++)
+	//		filler(data, machdep[i], NULL, 0);
+	//	return (0);
+	//}
+	//if (strcmp(path, "/user") == 0){
+	//	for (int i = 0; i < USER_ELEMS_COUNT; i++)
+	//		filler(data, user[i], NULL, 0);
+	//	return (0);
+	//}
+	//return (-ENOENT);
 }
 
 int bopen(const char *path, struct fuse_file_info *fi){
