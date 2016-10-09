@@ -2,6 +2,7 @@
 #define FUSE_USE_VERSION 30
 	
 #include <stdio.h>
+#include <syslog.h>
 #include <stdlib.h>
 #include <fuse.h>
 #include <unistd.h>
@@ -12,15 +13,81 @@
 #include <sys/resource.h>
 #include "params.h"
 
+int isdir(char *path) {
+	FILE *readcmd;
+	char cmd[2048], *line;
+	ssize_t read;
+	unsigned int i = strlen(path), len = 0;
+	syslog(LOG_DEBUG, "We are in isdir fuckfunc andand and path is %s\n", path);
+	sprintf(cmd, "sysctl -N %s", path);
+	readcmd = popen(cmd, "r");
+	if (readcmd != NULL) {
+		if ((read = getline(&line, &len, readcmd)) != -1) {
+			syslog(LOG_DEBUG, "We are in isdir fuckfunc and line is %s and readed is %u\n", line, read);
+			if(line[i] == '.') i++;
+			if(line[i] == 0) {
+				fclose(readcmd);
+				return 0;
+			}
+			else {
+				fclose(readcmd);
+				return 1;
+			}
+			/*while((line[i] != '.')  && (line[i] != 0)) {
+				entry[j++] = line[i++];
+			}
+			entry[j] = 0;
+			syslog(LOG_DEBUG, "The entry is the following: %s with such number: %u\n", entry, j);
+			if(strlen(entry) > 0) return 1;
+			else return 0;*/
+
+		}
+	}
+}
+
+/* This function cuts get diff between line and path and set up entry in a proper way  */
+int getentry(char *path, char *line, char *entry) {
+	unsigned int i = strlen(path), j = 0;
+	
+	if(line[i] == '.') i++;
+
+	while((line[i] != '.')  && (line[i] != 0)) {
+		entry[j++] = line[i++];
+	}
+	entry[j] = 0;
+	syslog(LOG_DEBUG, "The entry is the following: %s with such number: %u\n", entry, j);
+	if(strlen(entry) > 0) return 1;
+	else return 0;
+}
+
+/*int getunique(char **array, char* element, int *count) {
+	int i = 0;
+	for(i = 0; i < *count; i++) {
+		if(strcmp(array[i], element) == 0) {
+			return 0;	
+		}	
+	}
+	array[*count] = malloc(strlen(element) + 1);
+	strcpy(array[*count], element);
+	(*count)++;
+	return 1;
+}*/
+
 int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, struct fuse_file_info *ffi){
 	FILE *readcmd;
 	char *line = NULL;
-	char cmd[2048];
-	char path2[2048];
+	char cmd[2048], entry[2048], entry2[2048];
+	char entries[1024][2048];
+	int entries_count = 0;
+	char *path2 = malloc(2048);
 	size_t len = 0;
 	int flag = 0;
 	ssize_t read;
+	int i;
+		//entries = (char **)malloc(1024 * sizeof(char*));
+	syslog(LOG_DEBUG, "We are trying to read dir for the path: %s\n", path);
 	if (strcmp(path, "/") == 0){
+		
 		readcmd = popen("sysctl -aN 2>/dev/null | sed 's/\\..*//g' | uniq", "r");	
 		while ((read = getline(&line, &len, readcmd)) != -1) {
 			line[read - 1] = 0;
@@ -29,96 +96,42 @@ int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, st
 		return (0);
 	}
 	else {
-		if(path[0] == '/') path++;
+
 		strcpy(path2, path);
-		//filler(data, path2, NULL, 0);
+		if(path2[0] == '/') path2++;
 		for (int i = 0; path2[i] != 0 ; i++) {
 			if(path2[i] == '/') path2[i] = '.'; 
 		}
-		//filler(data, path2, NULL, 0);
+		//sprintf(cmd, "sysctl -N %s | sed 's/%s\\.\\{0,1\\}\\([^.]*\\)\\.\\{0,1\\}.*/\\1/g' | uniq", path2, path2);
 		sprintf(cmd, "sysctl -N %s", path2);
 		readcmd = popen(cmd, "r");
-		//filler(data, cmd, NULL, 0);
-		//return 0;
 		if (readcmd != NULL) {
 			while ((read = getline(&line, &len, readcmd)) != -1) {
+				flag = 0;
 				line[read - 1] = 0;
-				filler(data, line, NULL, 0);
-				//flag = flag > 0 ? flag : flag + 1;
-			}
-			//if ( !flag ) {
-			//	return (-ENOENT);
-			//}
-		fclose(readcmd);
-		free(path2);
-		return(0);
-		}
-		/*else {
-			return (-ENOENT);
-		}*/
-	}
-	
-	//else {
-	//	strcpy(path2, path == '/' ? (path + 1) : path);
-	//	for (int i = 0; path2[i] != 0 ; i++) {
-	//		if(path2[i] == '/') path2[i] = '.'; 
-	//	}
-	//	sprintf(cmd, "sysctl -N %s | sed 's/%s\\.\\{0,1\\}\\([^.]*\\)\\.\\{0,1\\}.*/\\1/g' | uniq", path2, path2); 
-	//	readcmd = popen(cmd, "r");	
-	//	if (readcmd != NULL) {
-	//		while ((read = getline(&line, &len, readcmd)) != -1) {
-	//			line[read - 1] = 0;
-	//			filler(data, line, NULL, 0);
-	//			flag = flag > 0 ? flag : flag + 1;
-	//		}
-	//		if ( !flag ) {
-	//			return (-ENOENT);
-	//		}
-	//	}
-	//	else {
-	//		return (-ENOENT);
-	//	}	
-	////	for (int i = 0; i < ROOT_ELEMS_COUNT; i++)
-	////		filler(data, root[i], NULL, 0);
-	//	return (0);
+				//sprintf(cmd, "%sN%u", line, strlen(line));
+				getentry(path2, line, entry);
+				for(int i = 0; i < entries_count; i++) {
 
-	//}
-	//if (strcmp(path, "/kern") == 0){
-	//	for (int i = 0; i < KERN_ELEMS_COUNT; i++)
-	//		filler(data, kern[i], NULL, 0);
-	//	return (0);
-	//}
-	//if (strcmp(path, "/security") == 0){
-	//	for(int i = 0; i < SECURITY_ELEMS_COUNT; i++)
-	//		filler(data, secur[i], NULL, 0);
-	//	return (0);
-	//}
-	//if (strcmp(path, "/security/bsd") == 0){
-	//	for(int i = 0; i < SECURBSD_ELEMS_COUNT; i++)
-	//		filler(data, securbsd[i], NULL, 0);
-	//	return (0);
-	//}
-	//if (strcmp(path, "/vm") == 0){
-	//	for (int i = 0; i < VM_ELEMS_COUNT; i++)
-	//		filler(data, vm[i], NULL, 0);
-	//	return (0);
-	//}
-	//if (strcmp(path, "/hw") == 0){
-	//	for (int i = 0; i < HW_ELEMS_COUNT; i++)
-	//		filler(data, hw[i], NULL, 0);
-	//	return (0);
-	//}
-	//if (strcmp(path, "/machdep") == 0){
-	//	for (int i = 0; i < MACHDEP_ELEMS_COUNT; i++)
-	//		filler(data, machdep[i], NULL, 0);
-	//	return (0);
-	//}
-	//if (strcmp(path, "/user") == 0){
-	//	for (int i = 0; i < USER_ELEMS_COUNT; i++)
-	//		filler(data, user[i], NULL, 0);
-	//	return (0);
-	//}
-	//return (-ENOENT);
+				  if(strcmp(entries[i], entry) == 0) {
+				  flag = 1;
+				  break;
+				  }
+				  }
+
+				  if(flag) {
+				  continue;
+				  }
+
+				  strcpy(entries[entries_count], entry);
+				  entries_count++;
+				filler(data, entry, NULL, 0);
+			}
+			fclose(readcmd);
+			free(path2);
+			return(0);
+		}
+	}
 }
 
 int bopen(const char *path, struct fuse_file_info *fi){
@@ -175,18 +188,27 @@ char *get_sys_param(const char *path){
 }
 
 int bgetattr(const char *path, struct stat *st){
+	char *path2 = malloc(2048);
 	if (strcmp(path, "/") == 0) {
 		st->st_mode = S_IFDIR | 0755;
 		st->st_nlink = 8;
 		return (0);
 	}
-	for (int i = 0; i < FOLDER_ELEMS_COUNT; i++)
-		if (strcmp(path, folders[i]) == 0){
-			st->st_mode = S_IFDIR | 0755;
-			if (strcmp(path, "/security")) st->st_nlink = 2;
-			else st->st_nlink = 3;
-			return (0);
-		}
+	//for (int i = 0; i < FOLDER_ELEMS_COUNT; i++)
+	//	if (strcmp(path, folders[i]) == 0){
+	strcpy(path2, path);
+	if(path2[0] == '/') path2++;
+	for (int i = 0; path2[i] != 0 ; i++) {
+		if(path2[i] == '/') path2[i] = '.'; 
+	}
+	if(isdir(path2)) {
+
+		st->st_mode = S_IFDIR | 0755;
+		/*if (strcmp(path, "/security")) st->st_nlink = 2;
+		else*/ st->st_nlink = 3;
+		free(path2);
+		return (0);
+	}
 	for (int i = 0; i < READONLY_ELEMS_COUNT; i++)
 		if (strcmp(path, readonly[i]) == 0){
 			st->st_mode = S_IFREG | 0444;
