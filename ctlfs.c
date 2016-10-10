@@ -1,6 +1,6 @@
 /*Broken file system*/
 #define FUSE_USE_VERSION 30
-	
+
 #include <stdio.h>
 #include <syslog.h>
 #include <stdlib.h>
@@ -45,7 +45,7 @@ int isdir(char *path) {
 /* This function cuts get diff between line and path and set up entry in a proper way  */
 int getentry(char *path, char *line, char *entry) {
 	unsigned int i = strlen(path), j = 0;
-	
+
 	if(line[i] == '.') i++;
 
 	while((line[i] != '.')  && (line[i] != 0)) {
@@ -62,53 +62,46 @@ int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, st
 	char *line = NULL;
 	char cmd[2048], entry[2048];
 	char entries[1024][2048];
-	int entries_count = 0;
 	char *path2 = malloc(2048);
+	int entries_count = 0, flag = 0;
 	size_t len = 0;
-	int flag = 0;
 	ssize_t read;
-	
-	if (strcmp(path, "/") == 0){
-		readcmd = popen("sysctl -aN 2>/dev/null | sed 's/\\..*//g' | uniq", "r");	
-		while ((read = getline(&line, &len, readcmd)) != -1) {
-			line[read - 1] = 0;
-			filler(data, line, NULL, 0);
-		}
-		return (0);
+
+	strcpy(path2, path);
+	if(path2[0] == '/') path2++;
+	for (int i = 0; path2[i] != 0 ; i++) {
+		if(path2[i] == '/') path2[i] = '.'; 
+	}
+	if (strcmp(path2, "") == 0){
+		sprintf(cmd, "sysctl -aN");
 	}
 	else {
-
-		strcpy(path2, path);
-		if(path2[0] == '/') path2++;
-		for (int i = 0; path2[i] != 0 ; i++) {
-			if(path2[i] == '/') path2[i] = '.'; 
-		}
 		sprintf(cmd, "sysctl -N %s", path2);
-		readcmd = popen(cmd, "r");
-		if (readcmd != NULL) {
-			while ((read = getline(&line, &len, readcmd)) != -1) {
-				flag = 0;
-				line[read - 1] = 0;
-				getentry(path2, line, entry);
-				for(int i = 0; i < entries_count; i++) {
+	}
+	readcmd = popen(cmd, "r");
+	if (readcmd != NULL) {
+		while ((read = getline(&line, &len, readcmd)) != -1) {
+			flag = 0;
+			line[read - 1] = 0;
+			getentry(path2, line, entry);
+			for(int i = 0; i < entries_count; i++) {
 
-					if(strcmp(entries[i], entry) == 0) {
-						flag = 1;
-						break;
-					}
+				if(strcmp(entries[i], entry) == 0) {
+					flag = 1;
+					break;
 				}
-				if(flag) {
-					continue;
-				}
-
-				strcpy(entries[entries_count], entry);
-				entries_count++;
-				filler(data, entry, NULL, 0);
 			}
-			fclose(readcmd);
-			free(path2);
-			return(0);
+			if(flag) {
+				continue;
+			}
+
+			strcpy(entries[entries_count], entry);
+			entries_count++;
+			filler(data, entry, NULL, 0);
 		}
+		fclose(readcmd);
+		free(path2);
+		return(0);
 	}
 }
 
@@ -140,20 +133,20 @@ char *get_sys_param(const char *path){
 			switch(j)
 			{
 				case 0:
-		sprintf(out, "%s: { hz = %d, tick = %d, profhz = %d, stathz = %d }\n",
-			buf2, *((int*)buf), ((int*)buf)[1], ((int*)buf)[2], ((int*)buf)[3]);
-				return (out);
+					sprintf(out, "%s: { hz = %d, tick = %d, profhz = %d, stathz = %d }\n",
+							buf2, *((int*)buf), ((int*)buf)[1], ((int*)buf)[2], ((int*)buf)[3]);
+					return (out);
 				case 1:
-		sprintf(out, "%s: { sec = %d, usec = %d }\n",
-			buf2, *((int*)buf), ((int*)buf)[2]);
-				return (out);
+					sprintf(out, "%s: { sec = %d, usec = %d }\n",
+							buf2, *((int*)buf), ((int*)buf)[2]);
+					return (out);
 				case 2:
-		scale = ((struct loadavg *)buf)->fscale;
-		for (int m = 0; m < 3; m++)
-			loadavg[m] = (double)(((struct loadavg *)buf)->ldavg[m]) / scale;
-		sprintf(out, "%s: { %.2f %.2f %.2f }\n",
-			buf2, loadavg[0], loadavg[1], loadavg[2]);
-				return (out);
+					scale = ((struct loadavg *)buf)->fscale;
+					for (int m = 0; m < 3; m++)
+						loadavg[m] = (double)(((struct loadavg *)buf)->ldavg[m]) / scale;
+					sprintf(out, "%s: { %.2f %.2f %.2f }\n",
+							buf2, loadavg[0], loadavg[1], loadavg[2]);
+					return (out);
 			}
 		}
 	for (int j = 0; j < STR_ELEMS_COUNT; j++)
@@ -182,7 +175,7 @@ int bgetattr(const char *path, struct stat *st){
 	if(err == 0) {
 		st->st_mode = S_IFDIR | 0755;
 		/*if (strcmp(path, "/security")) st->st_nlink = 2;
-		else*/ st->st_nlink = 3;
+		  else*/ st->st_nlink = 3;
 		free(path2);
 		//return -10;
 		return (0);
@@ -206,18 +199,18 @@ int btruncate(const char *path, off_t offset){
 int bread(const char *path, char *data, size_t size, off_t offset, struct fuse_file_info *fi){
 	for (int i = 0; i < PARAM_ELEMS_COUNT; i++)
 		if (strcmp(path, params[i]) == 0){
-		char *out = get_sys_param(path);
-		int n = strlen(out);
-		if (offset >= n) return (0);
-		if (offset + size > n){
-			memcpy(data, out + offset, n - offset);
+			char *out = get_sys_param(path);
+			int n = strlen(out);
+			if (offset >= n) return (0);
+			if (offset + size > n){
+				memcpy(data, out + offset, n - offset);
+				free(out);
+				return (n - offset);
+			}
+			memcpy(data, out + offset, size);
 			free(out);
-			return (n - offset);
+			return (size);
 		}
-		memcpy(data, out + offset, size);
-		free(out);
-		return (size);
-	}
 	return (-ENOENT);
 }
 
@@ -236,13 +229,13 @@ int bwrite(const char *path, const char *buf, size_t size, off_t offset, struct 
 			}
 			for (int j = 0; j < STR_ELEMS_COUNT; j++)
 				if (strcmp(buf2, strret[j]) == 0){
-			if (sysctlbyname(buf2, NULL, NULL, buf, strlen(buf)) != 0)
+					if (sysctlbyname(buf2, NULL, NULL, buf, strlen(buf)) != 0)
 						return (-EINVAL);
 					return (strlen(buf));
 				}
 			long inp = strtol(buf, NULL, 10);
 			if ((inp == 0 && errno == EINVAL) || 
-				((inp ==  LONG_MIN || inp == LONG_MAX) && errno == ERANGE))
+					((inp ==  LONG_MIN || inp == LONG_MAX) && errno == ERANGE))
 				return (-EINVAL);
 			if (sysctlbyname(buf2, NULL, NULL, &inp, sizeof(inp)) != 0)
 				return (-EINVAL);
