@@ -15,34 +15,31 @@
 
 int isdir(char *path) {
 	FILE *readcmd;
-	char cmd[2048], *line;
+	char cmd[2048], *line = NULL;
 	ssize_t read;
-	unsigned int i = strlen(path), len = 0;
-	syslog(LOG_DEBUG, "We are in isdir fuckfunc andand and path is %s\n", path);
+	size_t len;
+	unsigned int i = strlen(path);
 	sprintf(cmd, "sysctl -N %s", path);
 	readcmd = popen(cmd, "r");
 	if (readcmd != NULL) {
 		if ((read = getline(&line, &len, readcmd)) != -1) {
-			syslog(LOG_DEBUG, "We are in isdir fuckfunc and line is %s and readed is %u\n", line, read);
+			line[read - 1] = 0;
 			if(line[i] == '.') i++;
 			if(line[i] == 0) {
 				fclose(readcmd);
-				return 0;
+				return (-ENOTDIR); /* If path matches line then file is given  */
 			}
 			else {
 				fclose(readcmd);
-				return 1;
+				return (0); /* If there is something in line after path - it is a dir */
 			}
-			/*while((line[i] != '.')  && (line[i] != 0)) {
-				entry[j++] = line[i++];
-			}
-			entry[j] = 0;
-			syslog(LOG_DEBUG, "The entry is the following: %s with such number: %u\n", entry, j);
-			if(strlen(entry) > 0) return 1;
-			else return 0;*/
-
+		}
+		else { 
+			fclose(readcmd);
+			return (-ENOENT); /* If nothing matches - no such file o directory */
 		}
 	}
+	return (-ENOENT); 
 }
 
 /* This function cuts get diff between line and path and set up entry in a proper way  */
@@ -55,39 +52,23 @@ int getentry(char *path, char *line, char *entry) {
 		entry[j++] = line[i++];
 	}
 	entry[j] = 0;
-	syslog(LOG_DEBUG, "The entry is the following: %s with such number: %u\n", entry, j);
 	if(strlen(entry) > 0) return 1;
 	else return 0;
 }
 
-/*int getunique(char **array, char* element, int *count) {
-	int i = 0;
-	for(i = 0; i < *count; i++) {
-		if(strcmp(array[i], element) == 0) {
-			return 0;	
-		}	
-	}
-	array[*count] = malloc(strlen(element) + 1);
-	strcpy(array[*count], element);
-	(*count)++;
-	return 1;
-}*/
 
 int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, struct fuse_file_info *ffi){
 	FILE *readcmd;
 	char *line = NULL;
-	char cmd[2048], entry[2048], entry2[2048];
+	char cmd[2048], entry[2048];
 	char entries[1024][2048];
 	int entries_count = 0;
 	char *path2 = malloc(2048);
 	size_t len = 0;
 	int flag = 0;
 	ssize_t read;
-	int i;
-		//entries = (char **)malloc(1024 * sizeof(char*));
-	syslog(LOG_DEBUG, "We are trying to read dir for the path: %s\n", path);
+	
 	if (strcmp(path, "/") == 0){
-		
 		readcmd = popen("sysctl -aN 2>/dev/null | sed 's/\\..*//g' | uniq", "r");	
 		while ((read = getline(&line, &len, readcmd)) != -1) {
 			line[read - 1] = 0;
@@ -102,29 +83,26 @@ int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, st
 		for (int i = 0; path2[i] != 0 ; i++) {
 			if(path2[i] == '/') path2[i] = '.'; 
 		}
-		//sprintf(cmd, "sysctl -N %s | sed 's/%s\\.\\{0,1\\}\\([^.]*\\)\\.\\{0,1\\}.*/\\1/g' | uniq", path2, path2);
 		sprintf(cmd, "sysctl -N %s", path2);
 		readcmd = popen(cmd, "r");
 		if (readcmd != NULL) {
 			while ((read = getline(&line, &len, readcmd)) != -1) {
 				flag = 0;
 				line[read - 1] = 0;
-				//sprintf(cmd, "%sN%u", line, strlen(line));
 				getentry(path2, line, entry);
 				for(int i = 0; i < entries_count; i++) {
 
-				  if(strcmp(entries[i], entry) == 0) {
-				  flag = 1;
-				  break;
-				  }
-				  }
+					if(strcmp(entries[i], entry) == 0) {
+						flag = 1;
+						break;
+					}
+				}
+				if(flag) {
+					continue;
+				}
 
-				  if(flag) {
-				  continue;
-				  }
-
-				  strcpy(entries[entries_count], entry);
-				  entries_count++;
+				strcpy(entries[entries_count], entry);
+				entries_count++;
 				filler(data, entry, NULL, 0);
 			}
 			fclose(readcmd);
@@ -189,44 +167,35 @@ char *get_sys_param(const char *path){
 
 int bgetattr(const char *path, struct stat *st){
 	char *path2 = malloc(2048);
+	int err;
 	if (strcmp(path, "/") == 0) {
 		st->st_mode = S_IFDIR | 0755;
 		st->st_nlink = 8;
 		return (0);
 	}
-	//for (int i = 0; i < FOLDER_ELEMS_COUNT; i++)
-	//	if (strcmp(path, folders[i]) == 0){
 	strcpy(path2, path);
 	if(path2[0] == '/') path2++;
 	for (int i = 0; path2[i] != 0 ; i++) {
 		if(path2[i] == '/') path2[i] = '.'; 
 	}
-	if(isdir(path2)) {
-
+	err = isdir(path2);
+	if(err == 0) {
 		st->st_mode = S_IFDIR | 0755;
 		/*if (strcmp(path, "/security")) st->st_nlink = 2;
 		else*/ st->st_nlink = 3;
 		free(path2);
+		//return -10;
 		return (0);
 	}
-	for (int i = 0; i < READONLY_ELEMS_COUNT; i++)
-		if (strcmp(path, readonly[i]) == 0){
-			st->st_mode = S_IFREG | 0444;
-			st->st_nlink = 1;
-			char *outp = get_sys_param(path);
-			st->st_size = strlen(outp);
-			free(outp);
-			return (0);
-		}
-	for (int i = 0; i < RDWR_ELEMS_COUNT; i++)
-		if (strcmp(path, rdwr[i]) == 0){
-			st->st_mode = S_IFREG | 0666;
-			st->st_nlink = 1;
-			char *outp = get_sys_param(path);
-			st->st_size = strlen(outp);
-			free(outp);
-			return (0);
-		}
+	else if (err == (-ENOTDIR)) {
+		st->st_mode = S_IFREG | 0444;
+		st->st_nlink = 1;
+		//char *outp = get_sys_param(path);
+		////st->st_size = strlen(outp);
+		//free(outp);
+		free(path2);
+		return (0);
+	}
 	return (-ENOENT);
 }
 
@@ -259,8 +228,7 @@ int bread(const char *path, char *data, size_t size, off_t offset, struct fuse_f
 int bwrite(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
 	for (int i = 0; i < RDWR_ELEMS_COUNT; i++)
 		if (strcmp(path, rdwr[i]) == 0){
-			char buf2[100], *ch;
-			strncpy(buf2, path + 1, strlen(path));
+			char buf2[100], *ch; strncpy(buf2, path + 1, strlen(path));
 			ch = buf2;
 			while (*ch != 0){
 				if (*ch == '/') *ch = '.';
