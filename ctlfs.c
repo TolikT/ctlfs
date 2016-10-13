@@ -115,6 +115,7 @@ int bopen(const char *path, struct fuse_file_info *fi){
  * I don't want to check again the path, 
  * cause it will be done by caller.
  */
+/*
 char *get_sys_param(const char *path){
 	char buf[1000], buf2[100], *ch, *out;
 	double loadavg[3]; 
@@ -157,6 +158,7 @@ char *get_sys_param(const char *path){
 	sprintf(out, "%s: %d\n", buf2, *((int*)buf));
 	return (out);
 }
+*/
 
 int bgetattr(const char *path, struct stat *st){
 	char *path2 = malloc(2048);
@@ -197,21 +199,47 @@ int btruncate(const char *path, off_t offset){
 }
 
 int bread(const char *path, char *data, size_t size, off_t offset, struct fuse_file_info *fi){
-	for (int i = 0; i < PARAM_ELEMS_COUNT; i++)
-		if (strcmp(path, params[i]) == 0){
-			char *out = get_sys_param(path);
-			int n = strlen(out);
-			if (offset >= n) return (0);
-			if (offset + size > n){
-				memcpy(data, out + offset, n - offset);
-				free(out);
-				return (n - offset);
+	FILE *readcmd;
+	char *line = NULL;
+	char cmd[2048], entry[2048];
+	char entries[1024][2048];
+	char *path2 = malloc(2048);
+	int entries_count = 0, err = 0;
+	size_t len = 0;
+	ssize_t read;
+
+	strcpy(path2, path);
+	if(path2[0] == '/') path2++;
+	for (int i = 0; path2[i] != 0 ; i++) {
+		if(path2[i] == '/') path2[i] = '.'; 
+	}
+	err = isdir(path2);
+	if(err == (-ENOTDIR)) {
+		sprintf(cmd, "sysctl %s | awk '{ print $2 }'", path2);
+		readcmd = popen(cmd, "r");
+		if (readcmd != NULL) {
+			if ((read = getline(&line, &len, readcmd)) != -1) {
+				line[--read] = 0;
+				if (offset >= read) { free(path2); free(line); return (0);}
+				if (offset + size > read){
+					memcpy(data, line + offset, read - offset);
+					free(path2);
+					free(line);
+					return (read - offset);
+				}
+				memcpy(data, line + offset, size);
+				free(line);
+				free(path2);
+				return (size);
 			}
-			memcpy(data, out + offset, size);
-			free(out);
-			return (size);
-		}
-	return (-ENOENT);
+			fclose(readcmd);
+			free(line);
+			free(path2);
+			return(0);
+		} 
+		else if (err == 0)  { free(path2); return (-EISDIR); }
+		else { free(path2); return (-ENOENT); }
+	}
 }
 
 /*
