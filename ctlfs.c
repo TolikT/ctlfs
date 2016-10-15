@@ -20,10 +20,19 @@ int isdir(char *path) {
 	ssize_t read;
 	size_t len;
 	unsigned int i = strlen(path);
-	sprintf(cmd, "sysctl -N %s", path);
+	int j = 0;
+	sprintf(cmd, "sysctl -d %s", path);
 	readcmd = popen(cmd, "r");
 	if (readcmd != NULL) {
 		if ((read = getline(&line, &len, readcmd)) != -1) {
+			while(1)
+			{
+				if (line[j] == ':') {
+					line[j] = 0;
+					break;
+				}
+				j++;
+			}
 			line[read - 1] = 0;
 			if(line[i] == '.') i++;
 			if(line[i] == 0) {
@@ -125,6 +134,12 @@ int breaddir(const char *path, void *data, fuse_fill_dir_t filler, off_t off, st
 }
 
 int bopen(const char *path, struct fuse_file_info *fi){
+
+ int xfd = open("/tmp/zz", O_CREAT|O_WRONLY, 0777);
+ char x[2048];
+ snprintf(x, 2048, "open: %s\n", path);
+ write(xfd, x, strlen(x));
+
 	return (0);
 }
 
